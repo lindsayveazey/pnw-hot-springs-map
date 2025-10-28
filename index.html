@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PNW Hot Springs Map — Cluster + Filters + Address</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- MarkerCluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+  <!-- PapaParse (CSV) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- Lato font -->
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;600&display=swap" rel="stylesheet">
+
+  <style>
+    html,body { height: 100%; margin: 0; font-family: 'Lato', sans-serif; }
+    #map { height: 100vh; width: 100%; }
+
+    /* Filters panel */
+    .filters-box {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      width: 260px;
+      background: rgba(255,255,255,0.97);
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+      font-size: 14px;
+    }
+    .filters-box h3 { margin: 0 0 8px 0; display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .filters-box label { display:block; margin:6px 0; align-items:center; gap:8px; cursor:pointer; }
+    .filters-box .small { font-size:12px; color:#555; margin-top:6px; }
+    .filters-box select, .filters-box input[type="text"], .filters-box input[type="number"], .filters-box button {
+      width:100%; box-sizing:border-box; padding:7px; margin-top:6px; border-radius:6px; border:1px solid #ddd; font-size:14px;
+    }
+    .filters-box .btn-primary { background:#b22222; color:#fff; border:none; }
+    .filters-box .btn-ghost { background:#eee; color:#222; border:none; margin-top:8px; }
+
+    /* Info tooltip circle (click reveals text below) */
+    .info-circle { display:inline-block; width:20px; height:20px; border-radius:50%; text-align:center; line-height:20px; background:#eee; color:#333; font-weight:600; cursor:pointer; }
+
+    /* Brick red cluster colors */
+    .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+      background-color: rgba(178,34,34,0.65) !important;
+      border: 2px solid #8B0000 !important;
+    }
+    .marker-cluster div {
+      background-color: rgba(178,34,34,0.85) !important;
+      color: #fff !important;
+    }
+
+    /* Suggestion dropdown */
+    .suggestions {
+      position: relative;
+    }
+    .suggest-list {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      background: #fff;
+      border: 1px solid #ddd;
+      z-index: 2000;
+      max-height: 180px;
+      overflow-y: auto;
+      border-radius: 6px;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+    }
+    .suggest-item { padding:8px; cursor:pointer; }
+    .suggest-item:hover { background:#f2f2f2; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="filters-box" aria-live="polite">
+    <h3>Filters
+      <span class="info-circle" id="legendInfo" title="Filter legend">i</span>
+    </h3>
+
+    <label>Hot Springs Type:
+      <select id="typeFilter">
+        <option value="Any">Any</option>
+        <option value="Natural">Natural</option>
+        <option value="Commercial">Commercial</option>
+      </select>
+    </label>
+
+    <label><input type="checkbox" id="dogFilter"> 🐶 Dog Friendly</label>
+    <label><input type="checkbox" id="clothingFilter"> 🩱 Clothing Optional</label>
+    <label><input type="checkbox" id="overnightFilter"> 🏕️ Overnight Stay</label>
+    <label><input type="checkbox" id="accessFilter"> ♿ Accessible</label>
+    <label><input type="checkbox" id="seasonFilter"> ☀️ Seasonal Closures</label>
+
+    <hr style="margin:10px 0; border:none; border-top:1px solid #eee;">
+
+    <div class="small">
+  <strong>Find hot springs, pools & spas near you</strong><br>
+  Enter your address below, then choose how many <strong>miles</strong> away you’d like to search.
+</div>
+
+<div class="suggestions">
+  <input 
+    type="text" 
+    id="addressInput" 
+    placeholder="Start typing an address or place..." 
+    autocomplete="off" 
+  />
+  <div id="suggestions" class="suggest-list" style="display:none"></div>
+</div>
+
+<input 
+  type="number" 
+  id="radiusInput" 
+  placeholder="Radius (miles)" 
+  value="50" 
+  min="1" 
+  step="1" 
+/>
+<button id="searchBtn" class="btn-primary">Search Nearby</button>
+<button id="resetBtn" class="btn-ghost">Show All</button>
+
+
+    <div id="legendText" class="small" style="display:none; margin-top:8px;">
+      <strong>Legend:</strong><br>
+      • Blue pin = Natural springs<br>
+      • Purple pin = Commercial pools and spas<br>
+      • Clusters show number of springs in area — click to zoom in.<br>
+      • Use filters to narrow results.
+    </div>
+
+  </div>
+
+  <script>
+  (function(){
+    // ---------- CONFIG ----------
+    const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQFXr77aolXk7pybgX2iXZqXdq0mCUr0otFuM56uoVEgLKapcn3dK3t5sq8cCw0DyqaTvkeYqRxS_3k/pub?output=csv";
+    const map = L.map('map', { preferCanvas: true }).setView([45.5, -122.5], 6);
+
+    // Base tile
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(map);
+
+    // cluster group with options
+    const clusterGroup = L.markerClusterGroup({
+      chunkedLoading: true,
+      // spiderfy on max zoom and zoomToBoundsOnClick default true
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false
+    });
+    map.addLayer(clusterGroup);
+
+    // ---------- Utilities ----------
+    function makePinSVG(color) {
+      // simple pin svg (classic marker) with color
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
+          <path d="M15 0C9 0 4.5 4.5 4.5 10c0 7.5 10.5 23 10.5 23s10.5-15.5 10.5-23C25.5 4.5 21 0 15 0z" fill="${color}" stroke="#8B3B3B" stroke-width="0.5"/>
+          <circle cx="15" cy="10" r="5.2" fill="#fff" opacity="0.9"/>
+        </svg>`;
+      return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    }
+
+    // colored icons
+    const blueIcon = L.icon({ iconUrl: makePinSVG('#2a7bd6'), iconSize: [30,40], iconAnchor: [15,40], popupAnchor: [0,-36] });
+    const purpleIcon = L.icon({ iconUrl: makePinSVG('#7b4dbb'), iconSize: [30,40], iconAnchor: [15,40], popupAnchor: [0,-36] });
+
+    // Haversine distance (km)
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 3958.8; // miles
+      const dLat = (lat2 - lat1) * Math.PI/180;
+      const dLon = (lon2 - lon1) * Math.PI/180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // debounce helper
+    function debounce(fn, wait=300){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), wait); }; }
+
+    // ---------- Data & markers ----------
+    let allData = [];       // raw CSV rows
+    let allMarkers = [];    // L.marker objects (created once)
+
+    async function loadCSV() {
+      const txt = await fetch(csvUrl).then(r => r.text());
+      const parsed = Papa.parse(txt, { header: true, skipEmptyLines: true });
+      // normalize headers (trim)
+      allData = parsed.data.map(r => {
+        const clean = {};
+        for (const k in r) clean[k.trim()] = r[k] ? r[k].trim() : r[k];
+        return clean;
+      }).filter(r => r.Latitude && r.Longitude);
+      createMarkers(); // create markers once
+      populateTypeDropdown();
+      showAllMarkers();
+    }
+
+    function createMarkers() {
+      allMarkers = allData.map(row => {
+        const lat = parseFloat(row.Latitude);
+        const lon = parseFloat(row.Longitude);
+        const type = (row.Type || '').trim();
+        const icon = (type === 'Natural') ? blueIcon : purpleIcon;
+        const popupHtml = `
+          <div style="font-family: Lato, sans-serif;">
+            <strong>${row.Name || 'Unnamed'}</strong><br>
+            ${row.Address ? (row.Address + '<br>') : ''}
+            ${row.Type ? `<strong>Type:</strong> ${row.Type}<br>` : ''}
+            ${row['Seasonal Closure Notes'] ? (`<em>${row['Seasonal Closure Notes']}</em><br>`) : ''}
+            ${row.Website ? (`<a href="${row.Website}" target="_blank">Website</a>`) : ''}
+          </div>
+        `;
+        const m = L.marker([lat, lon], { icon }).bindPopup(popupHtml);
+        m._data = row; // attach data for filtering
+        return m;
+      });
+    }
+
+    function populateTypeDropdown() {
+      const types = Array.from(new Set(allData.map(d => d.Type).filter(Boolean)));
+      const sel = document.getElementById('typeFilter');
+      // clear existing non-Any options (keep Any)
+      [...sel.options].forEach(opt => { if (opt.value !== 'Any') sel.removeChild(opt); });
+      types.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t; o.textContent = t;
+        sel.appendChild(o);
+      });
+    }
+
+    // ---------- Render / Filter logic ----------
+    function showAllMarkers() {
+      clusterGroup.clearLayers();
+      allMarkers.forEach(m => clusterGroup.addLayer(m));
+      // fit to markers if you want (optional)
+      // const group = L.featureGroup(allMarkers); map.fitBounds(group.getBounds(), { padding: [40,40] });
+    }
+
+    function applyFilters() {
+      const typeVal = document.getElementById('typeFilter').value;
+      const dog = document.getElementById('dogFilter').checked;
+      const clothing = document.getElementById('clothingFilter').checked;
+      const overnight = document.getElementById('overnightFilter').checked;
+      const access = document.getElementById('accessFilter').checked;
+      const seasonal = document.getElementById('seasonFilter').checked;
+
+      clusterGroup.clearLayers();
+      allMarkers.forEach(m => {
+        const r = m._data;
+        if (!r) return;
+        if (typeVal !== 'Any' && (r.Type || '') !== typeVal) return;
+        if (dog && ((r['Dog Friendly'] || '').toLowerCase() !== 'yes')) return;
+        if (clothing && ((r['Clothing Optional'] || '').toLowerCase() !== 'yes')) return;
+        if (overnight && ((r['Overnight Stay'] || '').toLowerCase() !== 'yes')) return;
+        if (access && ((r['Accessibility'] || '').toLowerCase() !== 'yes')) return;
+        if (seasonal && ((r['Seasonal Closures'] || '').toLowerCase() !== 'yes')) return;
+        clusterGroup.addLayer(m);
+      });
+    }
+
+    // ---------- Address autocomplete (Nominatim) ----------
+    const addressInput = document.getElementById('addressInput');
+    const suggestionsBox = document.getElementById('suggestions');
+
+    const fetchSuggestions = debounce(async (q) => {
+      if (!q || q.length < 3) { suggestionsBox.style.display = 'none'; suggestionsBox.innerHTML = ''; return; }
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`;
+      try {
+        const res = await fetch(url, { headers: { 'Accept-Language':'en' }});
+        const arr = await res.json();
+        suggestionsBox.innerHTML = '';
+        if (!arr || !arr.length) { suggestionsBox.style.display = 'none'; return; }
+        arr.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'suggest-item';
+          div.textContent = item.display_name;
+          div.dataset.lat = item.lat;
+          div.dataset.lon = item.lon;
+          suggestionsBox.appendChild(div);
+          div.addEventListener('click', () => {
+            addressInput.value = item.display_name;
+            suggestionsBox.style.display = 'none';
+            addressInput.dataset.lat = item.lat;
+            addressInput.dataset.lon = item.lon;
+            // optional: perform search immediately
+            // doNearbyFilter(parseFloat(item.lat), parseFloat(item.lon));
+          });
+        });
+        suggestionsBox.style.display = 'block';
+      } catch (e) {
+        suggestionsBox.style.display = 'none';
+      }
+    }, 300);
+
+    addressInput.addEventListener('input', (e) => fetchSuggestions(e.target.value));
+    // hide suggestions on blur (small delay to allow click)
+    addressInput.addEventListener('blur', () => setTimeout(()=>{ suggestionsBox.style.display='none'; }, 200));
+
+    // ---------- Nearby filter ----------
+    async function doNearbyFilter(lat, lon, radiusKm) {
+      clusterGroup.clearLayers();
+      // iterate allMarkers and test distance
+      allMarkers.forEach(m => {
+        const r = m._data;
+        const markerLat = parseFloat(r.Latitude), markerLon = parseFloat(r.Longitude);
+        const d = haversine(lat, lon, markerLat, markerLon);
+        if (d <= radiusKm) clusterGroup.addLayer(m);
+      });
+      // zoom to user area
+      map.setView([lat, lon], Math.max(10, Math.round(8 - Math.log(radiusKm+1) + 2))); // heuristic zoom
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+      const radius = parseFloat(document.getElementById('radiusInput').value) || 100;
+      // if suggestion selected (lat/lon stored)
+      let lat = parseFloat(addressInput.dataset.lat);
+      let lon = parseFloat(addressInput.dataset.lon);
+      if (!lat || !lon) {
+        // try geocoding the typed address
+        const q = addressInput.value;
+        if (!q) return alert('Please enter an address or select a suggestion.');
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+        const res = await fetch(url).then(r=>r.json());
+        if (!res || !res.length) return alert('Address not found — try a different query or select a suggestion.');
+        lat = parseFloat(res[0].lat); lon = parseFloat(res[0].lon);
+      }
+      doNearbyFilter(lat, lon, radius);
+    });
+
+    // ---------- Reset ----------
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      // clear address dataset
+      addressInput.value = '';
+      delete addressInput.dataset.lat; delete addressInput.dataset.lon;
+      document.getElementById('radiusInput').value = 100;
+      // reset filters UI
+      document.getElementById('typeFilter').value = 'Any';
+      ['dogFilter','clothingFilter','overnightFilter','accessFilter','seasonFilter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+      });
+      // show all markers
+      showAllMarkers();
+      map.setView([45.5, -122.5], 6);
+    });
+
+    // ---------- Legend/info toggle ----------
+    document.getElementById('legendInfo').addEventListener('click', () => {
+      const el = document.getElementById('legendText');
+      el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+    });
+
+    // ---------- Hook filter checkboxes & type select ----------
+    ['dogFilter','clothingFilter','overnightFilter','accessFilter','seasonFilter','typeFilter'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', applyFilters);
+    });
+
+    // ---------- Load data ----------
+    loadCSV();
+
+    // make sure cluster clicking zooms and shows markers (defaults do)
+    // ensure clusterGroup is not re-created (we keep same instance) — avoids disappearance bug
+  })();
+  </script>
+</body>
+</html>
