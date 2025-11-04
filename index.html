@@ -200,8 +200,7 @@
     <input 
       type="number" 
       id="radiusInput" 
-      placeholder="Radius (miles)" 
-      value="50" 
+      placeholder="Enter search radius (miles)" 
       min="1" 
       step="1" 
     />
@@ -529,7 +528,7 @@
     }
 
     document.getElementById('searchBtn').addEventListener('click', async () => {
-      const radius = parseFloat(document.getElementById('radiusInput').value) || 100;
+      const radius = parseFloat(document.getElementById('radiusInput').value) || 50;
       let lat = parseFloat(addressInput.dataset.lat);
       let lon = parseFloat(addressInput.dataset.lon);
       if (!lat || !lon) {
@@ -547,7 +546,7 @@
     document.getElementById('resetBtn').addEventListener('click', () => {
       addressInput.value = '';
       delete addressInput.dataset.lat; delete addressInput.dataset.lon;
-      document.getElementById('radiusInput').value = 50;
+      document.getElementById('radiusInput').value = '';
       document.getElementById('typeFilter').value = 'Any';
       
       // Reset all checkboxes
