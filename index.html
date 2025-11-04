@@ -323,7 +323,6 @@
       const fields = [
         { id: 'dogFilter', column: 'Dog Friendly' },
         { id: 'clothingFilter', column: 'Clothing Optional' },
-        { id: 'overnightFilter', column: 'Overnight Stay' },
         { id: 'accessFilter', column: 'Accessibility' },
         { id: 'openAllYearFilter', column: 'Open All Year' }
       ];
@@ -337,6 +336,26 @@
           o.textContent = v;
           sel.appendChild(o);
         });
+      });
+
+      // Handle Overnight Stay separately to extract individual options
+      const overnightValues = new Set();
+      allData.forEach(d => {
+        const val = d['Overnight Stay'];
+        if (val) {
+          // Split by comma and trim each option
+          val.split(',').forEach(opt => {
+            const trimmed = opt.trim();
+            if (trimmed) overnightValues.add(trimmed);
+          });
+        }
+      });
+      const overnightSel = document.getElementById('overnightFilter');
+      Array.from(overnightValues).sort().forEach(v => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        overnightSel.appendChild(o);
       });
     }
 
@@ -373,7 +392,14 @@
         if (typeVal !== 'Any' && (r.Type || '') !== typeVal) return;
         if (dogVal !== 'Any' && (r['Dog Friendly'] || '') !== dogVal) return;
         if (clothingVal !== 'Any' && (r['Clothing Optional'] || '') !== clothingVal) return;
-        if (overnightVal !== 'Any' && (r['Overnight Stay'] || '') !== overnightVal) return;
+        
+        // Check if overnight value contains the selected option
+        if (overnightVal !== 'Any') {
+          const overnightStr = r['Overnight Stay'] || '';
+          const options = overnightStr.split(',').map(opt => opt.trim());
+          if (!options.includes(overnightVal)) return;
+        }
+        
         if (accessVal !== 'Any' && (r['Accessibility'] || '') !== accessVal) return;
         if (openAllYearVal !== 'Any' && (r['Open All Year'] || '') !== openAllYearVal) return;
         clusterGroup.addLayer(m);
