@@ -40,7 +40,7 @@
       overflow-y: auto;
     }
     .filters-box h3 { margin: 0 0 8px 0; display:flex; gap:8px; align-items:center; justify-content:space-between; }
-    .filters-box label { display:block; margin:6px 0; align-items:center; gap:8px; cursor:pointer; }
+    .filters-box label { display:flex; margin:6px 0; align-items:center; gap:8px; cursor:pointer; }
     .filters-box .small { font-size:12px; color:#555; margin-top:6px; }
     .filters-box select, .filters-box input[type="text"], .filters-box input[type="number"], .filters-box button {
       width:100%; box-sizing:border-box; padding:7px; margin-top:6px; border-radius:6px; border:1px solid #ddd; font-size:14px;
@@ -107,9 +107,11 @@
       margin-top: 4px;
     }
     .accordion-content.open { display: block; }
-    .accordion-content select {
-      margin-top: 4px;
-    }
+    
+    /* Checkbox styling */
+    .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; }
+    .checkbox-label input[type="checkbox"] { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -134,9 +136,7 @@
         <span class="accordion-arrow">▶</span>
       </div>
       <div id="dogAccordion" class="accordion-content">
-        <select id="dogFilter">
-          <option value="Any">Any</option>
-        </select>
+        <div class="checkbox-group" id="dogCheckboxes"></div>
       </div>
     </div>
 
@@ -146,9 +146,7 @@
         <span class="accordion-arrow">▶</span>
       </div>
       <div id="clothingAccordion" class="accordion-content">
-        <select id="clothingFilter">
-          <option value="Any">Any</option>
-        </select>
+        <div class="checkbox-group" id="clothingCheckboxes"></div>
       </div>
     </div>
 
@@ -158,9 +156,7 @@
         <span class="accordion-arrow">▶</span>
       </div>
       <div id="overnightAccordion" class="accordion-content">
-        <select id="overnightFilter">
-          <option value="Any">Any</option>
-        </select>
+        <div class="checkbox-group" id="overnightCheckboxes"></div>
       </div>
     </div>
 
@@ -170,9 +166,7 @@
         <span class="accordion-arrow">▶</span>
       </div>
       <div id="accessAccordion" class="accordion-content">
-        <select id="accessFilter">
-          <option value="Any">Any</option>
-        </select>
+        <div class="checkbox-group" id="accessCheckboxes"></div>
       </div>
     </div>
 
@@ -182,9 +176,7 @@
         <span class="accordion-arrow">▶</span>
       </div>
       <div id="openAllYearAccordion" class="accordion-content">
-        <select id="openAllYearFilter">
-          <option value="Any">Any</option>
-        </select>
+        <div class="checkbox-group" id="openAllYearCheckboxes"></div>
       </div>
     </div>
 
@@ -283,7 +275,7 @@
       }).filter(r => r.Latitude && r.Longitude);
       createMarkers();
       populateTypeDropdown();
-      populateFilterDropdowns();
+      populateFilterCheckboxes();
       showAllMarkers();
     }
 
@@ -319,43 +311,117 @@
       });
     }
 
-    function populateFilterDropdowns() {
+    function populateFilterCheckboxes() {
       const fields = [
-        { id: 'dogFilter', column: 'Dog Friendly' },
-        { id: 'clothingFilter', column: 'Clothing Optional' },
-        { id: 'accessFilter', column: 'Accessibility' },
-        { id: 'openAllYearFilter', column: 'Open All Year' }
+        { id: 'dogCheckboxes', column: 'Dog Friendly', name: 'dog' },
+        { id: 'clothingCheckboxes', column: 'Clothing Optional', name: 'clothing' },
+        { id: 'accessCheckboxes', column: 'Accessibility', name: 'access' },
+        { id: 'openAllYearCheckboxes', column: 'Open All Year', name: 'openAllYear' }
       ];
 
       fields.forEach(field => {
         const values = Array.from(new Set(allData.map(d => d[field.column]).filter(Boolean)));
-        const sel = document.getElementById(field.id);
+        const container = document.getElementById(field.id);
+        
+        // Add "Any" checkbox first (checked by default)
+        const anyLabel = document.createElement('label');
+        anyLabel.className = 'checkbox-label';
+        const anyCheckbox = document.createElement('input');
+        anyCheckbox.type = 'checkbox';
+        anyCheckbox.value = 'Any';
+        anyCheckbox.checked = true;
+        anyCheckbox.dataset.filterGroup = field.name;
+        anyLabel.appendChild(anyCheckbox);
+        anyLabel.appendChild(document.createTextNode('Any'));
+        container.appendChild(anyLabel);
+        
+        // Add other values
         values.sort().forEach(v => {
-          const o = document.createElement('option');
-          o.value = v;
-          o.textContent = v;
-          sel.appendChild(o);
+          const label = document.createElement('label');
+          label.className = 'checkbox-label';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = v;
+          checkbox.dataset.filterGroup = field.name;
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(v));
+          container.appendChild(label);
         });
       });
 
-      // Handle Overnight Stay separately to extract individual options
+      // Handle Overnight Stay separately (for comma-separated values)
       const overnightValues = new Set();
       allData.forEach(d => {
         const val = d['Overnight Stay'];
         if (val) {
-          // Split by comma and trim each option
           val.split(',').forEach(opt => {
             const trimmed = opt.trim();
             if (trimmed) overnightValues.add(trimmed);
           });
         }
       });
-      const overnightSel = document.getElementById('overnightFilter');
+      
+      const overnightContainer = document.getElementById('overnightCheckboxes');
+      
+      // Add "Any" checkbox first (checked by default)
+      const anyLabel = document.createElement('label');
+      anyLabel.className = 'checkbox-label';
+      const anyCheckbox = document.createElement('input');
+      anyCheckbox.type = 'checkbox';
+      anyCheckbox.value = 'Any';
+      anyCheckbox.checked = true;
+      anyCheckbox.dataset.filterGroup = 'overnight';
+      anyLabel.appendChild(anyCheckbox);
+      anyLabel.appendChild(document.createTextNode('Any'));
+      overnightContainer.appendChild(anyLabel);
+      
       Array.from(overnightValues).sort().forEach(v => {
-        const o = document.createElement('option');
-        o.value = v;
-        o.textContent = v;
-        overnightSel.appendChild(o);
+        const label = document.createElement('label');
+        label.className = 'checkbox-label';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = v;
+        checkbox.dataset.filterGroup = 'overnight';
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(v));
+        overnightContainer.appendChild(label);
+      });
+
+      // Add checkbox change listeners
+      setupCheckboxListeners();
+    }
+
+    function setupCheckboxListeners() {
+      document.querySelectorAll('input[type="checkbox"][data-filter-group]').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+          const group = this.dataset.filterGroup;
+          const groupCheckboxes = document.querySelectorAll(`input[type="checkbox"][data-filter-group="${group}"]`);
+          
+          if (this.value === 'Any') {
+            // If "Any" is checked, uncheck all others
+            if (this.checked) {
+              groupCheckboxes.forEach(cb => {
+                if (cb.value !== 'Any') cb.checked = false;
+              });
+            }
+          } else {
+            // If any other option is checked, uncheck "Any"
+            if (this.checked) {
+              groupCheckboxes.forEach(cb => {
+                if (cb.value === 'Any') cb.checked = false;
+              });
+            }
+            // If no options are checked, re-check "Any"
+            const anyChecked = Array.from(groupCheckboxes).some(cb => cb.checked);
+            if (!anyChecked) {
+              groupCheckboxes.forEach(cb => {
+                if (cb.value === 'Any') cb.checked = true;
+              });
+            }
+          }
+          
+          applyFilters();
+        });
       });
     }
 
@@ -377,31 +443,40 @@
       allMarkers.forEach(m => clusterGroup.addLayer(m));
     }
 
+    function getCheckedValues(groupName) {
+      const checkboxes = document.querySelectorAll(`input[type="checkbox"][data-filter-group="${groupName}"]:checked`);
+      const values = Array.from(checkboxes).map(cb => cb.value);
+      return values.includes('Any') ? ['Any'] : values;
+    }
+
     function applyFilters() {
       const typeVal = document.getElementById('typeFilter').value;
-      const dogVal = document.getElementById('dogFilter').value;
-      const clothingVal = document.getElementById('clothingFilter').value;
-      const overnightVal = document.getElementById('overnightFilter').value;
-      const accessVal = document.getElementById('accessFilter').value;
-      const openAllYearVal = document.getElementById('openAllYearFilter').value;
+      const dogVals = getCheckedValues('dog');
+      const clothingVals = getCheckedValues('clothing');
+      const overnightVals = getCheckedValues('overnight');
+      const accessVals = getCheckedValues('access');
+      const openAllYearVals = getCheckedValues('openAllYear');
 
       clusterGroup.clearLayers();
       allMarkers.forEach(m => {
         const r = m._data;
         if (!r) return;
-        if (typeVal !== 'Any' && (r.Type || '') !== typeVal) return;
-        if (dogVal !== 'Any' && (r['Dog Friendly'] || '') !== dogVal) return;
-        if (clothingVal !== 'Any' && (r['Clothing Optional'] || '') !== clothingVal) return;
         
-        // Check if overnight value contains the selected option
-        if (overnightVal !== 'Any') {
+        if (typeVal !== 'Any' && (r.Type || '') !== typeVal) return;
+        
+        if (!dogVals.includes('Any') && !dogVals.includes(r['Dog Friendly'] || '')) return;
+        if (!clothingVals.includes('Any') && !clothingVals.includes(r['Clothing Optional'] || '')) return;
+        if (!accessVals.includes('Any') && !accessVals.includes(r['Accessibility'] || '')) return;
+        if (!openAllYearVals.includes('Any') && !openAllYearVals.includes(r['Open All Year'] || '')) return;
+        
+        // Handle overnight stay (comma-separated values)
+        if (!overnightVals.includes('Any')) {
           const overnightStr = r['Overnight Stay'] || '';
           const options = overnightStr.split(',').map(opt => opt.trim());
-          if (!options.includes(overnightVal)) return;
+          const hasMatch = overnightVals.some(val => options.includes(val));
+          if (!hasMatch) return;
         }
         
-        if (accessVal !== 'Any' && (r['Accessibility'] || '') !== accessVal) return;
-        if (openAllYearVal !== 'Any' && (r['Open All Year'] || '') !== openAllYearVal) return;
         clusterGroup.addLayer(m);
       });
     }
@@ -474,11 +549,16 @@
       delete addressInput.dataset.lat; delete addressInput.dataset.lon;
       document.getElementById('radiusInput').value = 50;
       document.getElementById('typeFilter').value = 'Any';
-      document.getElementById('dogFilter').value = 'Any';
-      document.getElementById('clothingFilter').value = 'Any';
-      document.getElementById('overnightFilter').value = 'Any';
-      document.getElementById('accessFilter').value = 'Any';
-      document.getElementById('openAllYearFilter').value = 'Any';
+      
+      // Reset all checkboxes
+      document.querySelectorAll('input[type="checkbox"][data-filter-group]').forEach(cb => {
+        if (cb.value === 'Any') {
+          cb.checked = true;
+        } else {
+          cb.checked = false;
+        }
+      });
+      
       showAllMarkers();
       map.setView([45.5, -122.5], 6);
     });
@@ -489,12 +569,8 @@
       el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
     });
 
-    // ---------- Hook filter dropdowns ----------
-    ['typeFilter','dogFilter','clothingFilter','overnightFilter','accessFilter','openAllYearFilter'].forEach(id=>{
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('change', applyFilters);
-    });
+    // ---------- Hook type filter dropdown ----------
+    document.getElementById('typeFilter').addEventListener('change', applyFilters);
 
     // ---------- Load data ----------
     loadCSV();
